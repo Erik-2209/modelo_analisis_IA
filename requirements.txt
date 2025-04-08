@@ -7,3 +7,4 @@ python-multipart==0.0.6
 uvicorn==0.22.0
 librosa==0.10.0
 httpx==0.23.3
+pymupdf==1.22.5

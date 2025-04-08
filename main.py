@@ -25,11 +25,29 @@ app = FastAPI(
 # Configuración de CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permitir todos los orígenes o especificar tu dominio
+    allow_origins=[
+        "http://localhost:5173",  # Desarrollo local
+        "https://tu-frontend.com"  # Tu dominio de producción
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Permitir todos los métodos HTTP
-    allow_headers=["*"],  # Permitir todos los encabezados
+    allow_methods=["POST", "OPTIONS"],  # Específica los métodos necesarios
+    allow_headers=["Content-Type", "Authorization"],  # Headers explícitos
+    expose_headers=["Content-Type"]  # Headers que el frontend puede leer
 )
+
+# Añade un manejador explícito para OPTIONS
+@app.options("/programar-analisis")
+async def options_programar_analisis():
+    return JSONResponse(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "https://tu-frontend.com",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "86400"  # Cache preflight por 24 horas
+        }
+    )
+
 # Configuración de variables
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -146,6 +164,20 @@ def descargar_archivo(bucket: str, archivo_remoto: str, archivo_local: str) -> b
     except Exception as e:
         print(f"Error descargando {archivo_remoto}: {str(e)[:200]}")
         return False
+
+def extraer_texto_pdf(pdf_path: str) -> str:
+    """
+    Extrae texto de un archivo PDF usando PyMuPDF (fitz)
+    """
+    try:
+        texto = ""
+        with fitz.open(pdf_path) as doc:
+            for page in doc:
+                texto += page.get_text()
+        return texto.strip()
+    except Exception as e:
+        print(f"Error extrayendo texto PDF: {str(e)}")
+        raise Exception("No se pudo extraer texto del PDF")
 
 async def realizar_analisis_completo(paciente_id: str, archivo_pdf: str, archivo_audio: str):
     try:

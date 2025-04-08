@@ -3,5 +3,5 @@ torch
 torchaudio
 ffmpeg-python
 whisper
-supabase-py
+supabase
 pymupdf

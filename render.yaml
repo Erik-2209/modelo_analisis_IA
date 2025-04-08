@@ -13,5 +13,5 @@ services:
       - key: SUPABASE_URL
         value: SUPABASE_URL=https://qdlmwuflfniifrmeoadl.supabase.co
       - key: SUPABASE_KEY
-        value: SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkbG13dWZsZm5paWZybWVvYWRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyNDg0MDQsImV4cCI6MjA1NzgyNDQwNH0.HESG9PdRiG2U_4HuKOMx4QOXi3hCy1Z5eF24JI3kMZw
+        value: SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkbG13dWZsZm5paWZybWVvYWRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyNDg0MDQsImV4cCI6MjA1NzgyNDQwNH0.HESG9PdRiG2U_4HuKOMx4QOXi3hCy1Z5eF24JI3kMZw
     healthCheckPath: /health

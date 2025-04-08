@@ -1,9 +1,8 @@
-git+https://github.com/openai/whisper.git
-torch
-torchaudio
-ffmpeg-python
-whisper
-supabase
-pymupdf
-fastapi
-uvicorn
+fastapi==0.95.2
+supabase==2.3.1
+whisper==1.1.10
+pymupdf==1.22.5
+python-dotenv==1.0.0
+python-multipart==0.0.6
+uvicorn==0.22.0
+librosa==0.10.0

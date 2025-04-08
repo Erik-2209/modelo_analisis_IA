@@ -23,21 +23,13 @@ app = FastAPI(
 )
 
 # Configuración de CORS
-origins = [
-    "https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3-ladv5tn2--5173--d69c5f7b.local-credentialless.webcontainer-api.io",  # Tu dominio
-    "http://localhost:5173",  # Para desarrollo local
-    "*",  # Permitir todos los orígenes (no recomendable en producción)
-]
-
-# Añadir middleware para CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # Orígenes permitidos
-    allow_credentials=True,  # Permitir credenciales como cookies
+    allow_origins=["*"],  # Permitir todos los orígenes o especificar tu dominio
+    allow_credentials=True,
     allow_methods=["*"],  # Permitir todos los métodos HTTP
     allow_headers=["*"],  # Permitir todos los encabezados
 )
-
 # Configuración de variables
 warnings.filterwarnings("ignore", category=UserWarning)
 

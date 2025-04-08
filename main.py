@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
 from typing import Optional
 
 # Configuración básica
@@ -61,22 +62,34 @@ async def startup_event():
         supabase_key = os.getenv("SUPABASE_KEY")
         
         if not supabase_url or not supabase_key:
-            raise ValueError("Faltan variables de entorno SUPABASE_URL o SUPABASE_KEY")
+            raise ValueError("Configura SUPABASE_URL y SUPABASE_KEY en Render")
 
-        # Conexión simplificada sin opciones
-        app.state.supabase = create_client(supabase_url, supabase_key)
+        # Configuración mínima y compatible
+        options = ClientOptions(
+            auto_refresh_token=False,
+            persist_session=False,
+            headers={
+                'X-Client-Info': 'my-app/1.0'
+            }
+        )
         
-        # Test de conexión básico
+        app.state.supabase = create_client(
+            supabase_url,
+            supabase_key,
+            options=options
+        )
+        
+        # Test de conexión
         try:
-            result = app.state.supabase.table("audios").select("id").limit(1).execute()
-            print("✅ Conexión a Supabase exitosa. Resultado:", result)
+            data = app.state.supabase.table("audios").select("id").limit(1).execute()
+            print("✅ Conexión exitosa a Supabase")
         except Exception as e:
-            raise ConnectionError(f"Error conectando a Supabase: {str(e)[:200]}")
+            raise ConnectionError(f"Error Supabase: {str(e)[:200]}")
 
     except Exception as e:
-        print(f"⛔ Error crítico en startup: {str(e)}")
+        print(f"⛔ Error de inicio: {str(e)}")
         raise
-        
+
         # Configurar Supabase con timeout
         app.state.supabase = create_client(
             supabase_url,

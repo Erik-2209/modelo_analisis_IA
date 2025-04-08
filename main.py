@@ -61,25 +61,26 @@ async def startup_event():
         supabase_key = os.getenv("SUPABASE_KEY")
         
         if not supabase_url or not supabase_key:
-            raise ValueError("Faltan variables de entorno SUPABASE_URL o SUPABASE_KEY")
+            raise ValueError("""
+            Error: Variables de entorno faltantes.
+            Configura en Render:
+            1. SUPABASE_URL (https://tudominio.supabase.co)
+            2. SUPABASE_KEY (tu_clave_publica)
+            """)
 
-        # Conexión actualizada
-        app.state.supabase = create_client(
-            supabase_url,
-            supabase_key,
-            options={
-                'auto_refresh_token': True,
-                'persist_session': True
-            }
-        )
+        # Conexión simplificada y compatible
+        app.state.supabase = create_client(supabase_url, supabase_key)
         
-        # Test de conexión simple
-        app.state.supabase.table("audios").select("id").limit(1).execute()
-        
+        # Test de conexión básico
+        try:
+            app.state.supabase.table("audios").select("id").limit(1).execute()
+            print("✅ Conexión a Supabase exitosa")
+        except Exception as e:
+            raise ConnectionError(f"Error conectando a Supabase: {str(e)[:200]}")
+
     except Exception as e:
-        print(f"⛔ Error de conexión: {str(e)}")
-        raise
-
+        print(f"⛔ Error crítico en startup: {str(e)}")
+        raise 
         # Configurar Supabase con timeout
         app.state.supabase = create_client(
             supabase_url,

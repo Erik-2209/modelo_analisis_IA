@@ -155,6 +155,7 @@ async def health_check():
         "timestamp": datetime.datetime.now().isoformat()
     }
 
+# Descargar archivo de Supabase
 def descargar_archivo(bucket: str, archivo_remoto: str, archivo_local: str) -> bool:
     try:
         with open(archivo_local, "wb") as f:
@@ -165,87 +166,109 @@ def descargar_archivo(bucket: str, archivo_remoto: str, archivo_local: str) -> b
         print(f"Error descargando {archivo_remoto}: {str(e)[:200]}")
         return False
 
+# Extraer texto del PDF
 def extraer_texto_pdf(pdf_path: str) -> str:
     """
-    Extrae texto de un archivo PDF usando PyMuPDF (fitz)
+    Extrae texto de un archivo PDF
     """
     try:
-        texto = ""
-        with fitz.open(pdf_path) as doc:
-            for page in doc:
-                texto += page.get_text()
+        doc = fitz.open(pdf_path)
+        texto = "\n".join(page.get_text("text") for page in doc)
         return texto.strip()
     except Exception as e:
-        print(f"Error extrayendo texto PDF: {str(e)}")
-        raise Exception("No se pudo extraer texto del PDF")
+        print(f"Error extrayendo texto del PDF: {str(e)[:200]}")
+        return ""
 
+# Transcribir audio con Whisper
+def transcribir_audio(audio_path: str):
+    try:
+        result = app.state.whisper_model.transcribe(audio_path)
+        return result
+    except Exception as e:
+        print(f"Error al transcribir el audio: {str(e)[:200]}")
+        return None
+
+# Normalizar texto
+def normalizar_texto(texto: str) -> str:
+    return re.sub(r"[^\w\s]", "", texto.lower()).strip()
+
+# Comparar textos y generar estadísticas
+def analizar_diferencias(texto_ref: str, texto_audio: str):
+    diferencias = []
+    ref_words = texto_ref.split()
+    audio_words = texto_audio.split()
+
+    matcher = difflib.SequenceMatcher(None, ref_words, audio_words)
+
+    correctas = 0
+    incorrectas = 0
+
+    for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
+        if opcode == "equal":
+            correctas += (i2 - i1)
+        else:
+            incorrectas += max(i2 - i1, j2 - j1)
+            diferencias.append({
+                "tipo": opcode,
+                "palabra_original": " ".join(ref_words[i1:i2]),
+                "palabra_dicha": " ".join(audio_words[j1:j2])
+            })
+    total = correctas + incorrectas
+    precision = round((correctas / total) * 100, 2) if total > 0 else 0
+
+    return diferencias, correctas, incorrectas, precision
+
+# Calcular fluidez
+def calcular_fluidez(transcripcion):
+    palabras = transcripcion['text'].split()
+    n_palabras = len(palabras)
+    duracion = transcripcion['segments'][-1]['end'] if transcripcion['segments'] else 1
+    palabras_por_minuto = round(n_palabras / (duracion / 60), 2)
+
+    for i in range(1, len(transcripcion['segments'])):
+        transcripcion['segments'][i]['prev_end'] = transcripcion['segments'][i-1]['end']
+
+    pausas = [seg for seg in transcripcion['segments'] if seg['start'] - seg.get('prev_end', 0) > 1.5]
+    
+    return {
+        "palabras_por_minuto": palabras_por_minuto,
+        "numero_pausas": len(pausas),
+        "duracion_total_segundos": round(duracion, 2)
+    }
+
+# Realizar análisis completo
 async def realizar_analisis_completo(paciente_id: str, archivo_pdf: str, archivo_audio: str):
     try:
         if not descargar_archivo(BUCKET_PDF, archivo_pdf, PDF_TEMP):
-            raise Exception("Error descargando PDF")
+            raise HTTPException(status_code=500, detail="No se pudo descargar el PDF")
 
         if not descargar_archivo(BUCKET_AUDIO, archivo_audio, AUDIO_TEMP):
-            raise Exception("Error descargando audio")
+            raise HTTPException(status_code=500, detail="No se pudo descargar el audio")
 
-        texto_ref = extraer_texto_pdf(PDF_TEMP)
+        texto_ref = normalizar_texto(extraer_texto_pdf(PDF_TEMP))
         transcripcion = transcribir_audio(AUDIO_TEMP)
+
         if not transcripcion:
-            raise Exception("Error en transcripción")
+            raise HTTPException(status_code=500, detail="Error al transcribir el audio")
 
         texto_audio = normalizar_texto(transcripcion['text'])
         diferencias, correctas, incorrectas, precision = analizar_diferencias(texto_ref, texto_audio)
         fluidez = calcular_fluidez(transcripcion)
 
-        await guardar_resultados(
-            app.state.supabase,
-            paciente_id,
-            diferencias,
-            correctas,
-            incorrectas,
-            precision,
-            fluidez
-        )
+        # Guardar resultados en Supabase
+        app.state.supabase.table("resultados").insert([{
+            "paciente_id": paciente_id,
+            "precision": precision,
+            "fluidez": fluidez,
+            "diferencias": json.dumps(diferencias),
+            "fecha_analisis": datetime.datetime.now().isoformat()
+        }]).execute()
 
-    except Exception as e:
-        print(f"Error en análisis: {str(e)[:500]}")
-    finally:
-        for archivo in [PDF_TEMP, AUDIO_TEMP]:
-            try:
-                if os.path.exists(archivo):
-                    os.remove(archivo)
-            except:
-                pass
+        # Finalizar el análisis
         app.state.analisis_en_curso = False
 
-async def guardar_resultados(supabase: Client, paciente_id: str, diferencias: list, correctas: int, incorrectas: int, precision: float, fluidez: dict):
-    now = datetime.datetime.now().isoformat()
-    try:
-        datos_precision = {
-            "paciente_id": paciente_id,
-            "fecha": now,
-            "palabras_correctas": correctas,
-            "palabras_incorrectas": incorrectas,
-            "porcentaje_precision": precision
-        }
-
-        datos_fluidez = {
-            "paciente_id": paciente_id,
-            "fecha": now,
-            "palabras_por_minuto": fluidez["palabras_por_minuto"],
-            "numero_pausas": fluidez["numero_pausas"]
-        }
-
-        supabase.table("precision_pronunciacion").insert(datos_precision).execute()
-        supabase.table("fluidez_lectora").insert(datos_fluidez).execute()
-
-        for error in diferencias[:5]:
-            supabase.table("errores_recurrentes").insert({
-                "paciente_id": paciente_id,
-                "fecha": now,
-                "tipo_error": error["tipo"],
-                "palabra_original": error["palabra_original"],
-                "palabra_dicha": error["palabra_dicha"]
-            }).execute()
-
     except Exception as e:
-        print(f"Error guardando resultados: {str(e)[:500]}")
+        app.state.analisis_en_curso = False
+        print(f"Error en análisis completo: {str(e)}")
+        raise
+

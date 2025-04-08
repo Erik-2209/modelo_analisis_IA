@@ -9,17 +9,36 @@ import datetime
 import warnings
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from typing import Optional
 
+# Crear la instancia de la aplicación FastAPI
 app = FastAPI(
     title="API de Análisis de Lectura",
     description="API para análisis de audio usando Whisper y Supabase",
     version="1.0"
 )
 
+# Configuración de CORS
+origins = [
+    "https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3-ladv5tn2--5173--d69c5f7b.local-credentialless.webcontainer-api.io",  # Tu dominio
+    "http://localhost:5173",  # Para desarrollo local
+    "*",  # Permitir todos los orígenes (no recomendable en producción)
+]
+
+# Añadir middleware para CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Orígenes permitidos
+    allow_credentials=True,  # Permitir credenciales como cookies
+    allow_methods=["*"],  # Permitir todos los métodos HTTP
+    allow_headers=["*"],  # Permitir todos los encabezados
+)
+
+# Configuración de variables
 warnings.filterwarnings("ignore", category=UserWarning)
 
 MODELO_WHISPER = "tiny"
@@ -29,6 +48,7 @@ BUCKET_AUDIO = "audios"
 PDF_TEMP = "temp_ref.pdf"
 AUDIO_TEMP = "temp_audio.mp3"
 
+# Definir modelos de datos
 class AnalisisRequest(BaseModel):
     paciente_id: str
     archivo_pdf: str
@@ -68,7 +88,7 @@ async def startup_event():
 
         app.state.supabase = create_client(supabase_url, supabase_key, options=options)
 
-        # Probar conexión Supabase
+        # Probar conexión a Supabase
         data = app.state.supabase.table("audios").select("id").limit(1).execute()
         print("✅ Conexión exitosa a Supabase")
 

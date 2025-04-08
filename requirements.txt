@@ -1,5 +1,5 @@
 fastapi==0.95.2
-supabase==2.6.0
+supabase==1.0.3
 openai-whisper==20231117
 pymupdf==1.22.5
 python-dotenv==1.0.0

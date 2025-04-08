@@ -57,12 +57,28 @@ async def catch_exceptions(request: Request, call_next):
 @app.on_event("startup")
 async def startup_event():
     try:
-        # Validar variables de entorno
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_KEY")
         
         if not supabase_url or not supabase_key:
-            raise ValueError("Variables SUPABASE_URL y SUPABASE_KEY requeridas")
+            raise ValueError("Faltan variables de entorno SUPABASE_URL o SUPABASE_KEY")
+
+        # Conexión actualizada
+        app.state.supabase = create_client(
+            supabase_url,
+            supabase_key,
+            options={
+                'auto_refresh_token': True,
+                'persist_session': True
+            }
+        )
+        
+        # Test de conexión simple
+        app.state.supabase.table("audios").select("id").limit(1).execute()
+        
+    except Exception as e:
+        print(f"⛔ Error de conexión: {str(e)}")
+        raise
 
         # Configurar Supabase con timeout
         app.state.supabase = create_client(

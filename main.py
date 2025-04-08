@@ -22,7 +22,7 @@ app = FastAPI(
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-MODELO_WHISPER = "base"
+MODELO_WHISPER = "tiny"
 MAX_DURACION_AUDIO = 120
 BUCKET_PDF = "pruebas"
 BUCKET_AUDIO = "audios"

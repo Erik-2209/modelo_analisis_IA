@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
-from typing import Optional
+from typing import Optional, List, Dict
 
 # Crear la instancia de la aplicación FastAPI
 app = FastAPI(
@@ -22,31 +22,21 @@ app = FastAPI(
     version="1.0"
 )
 
-# Configuración de CORS
+# Configuración de CORS más permisiva para desarrollo
+origins = [
+    "http://localhost",
+    "http://localhost:5173",
+    "https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3-ladv5tn2--5173--d69c5f7b.local-credentialless.webcontainer-api.io",
+    "https://tu-frontend.com"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Desarrollo local
-        "https://tu-frontend.com"  # Tu dominio de producción
-    ],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["POST", "OPTIONS"],  # Específica los métodos necesarios
-    allow_headers=["Content-Type", "Authorization"],  # Headers explícitos
-    expose_headers=["Content-Type"]  # Headers que el frontend puede leer
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-# Añade un manejador explícito para OPTIONS
-@app.options("/programar-analisis")
-async def options_programar_analisis():
-    return JSONResponse(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "https://tu-frontend.com",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Max-Age": "86400"  # Cache preflight por 24 horas
-        }
-    )
 
 # Configuración de variables
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -69,16 +59,6 @@ class HealthCheck(BaseModel):
     modelo: str
     supabase_connected: bool
     timestamp: str
-
-@app.middleware("http")
-async def catch_exceptions(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)[:200]}
-        )
 
 @app.on_event("startup")
 async def startup_event():
@@ -155,7 +135,6 @@ async def health_check():
         "timestamp": datetime.datetime.now().isoformat()
     }
 
-# Descargar archivo de Supabase
 def descargar_archivo(bucket: str, archivo_remoto: str, archivo_local: str) -> bool:
     try:
         with open(archivo_local, "wb") as f:
@@ -192,8 +171,8 @@ def transcribir_audio(audio_path: str):
 def normalizar_texto(texto: str) -> str:
     return re.sub(r"[^\w\s]", "", texto.lower()).strip()
 
-# Comparar textos y generar estadísticas
-def analizar_diferencias(texto_ref: str, texto_audio: str):
+# Función mejorada para analizar diferencias
+def analizar_diferencias(texto_ref: str, texto_audio: str) -> tuple:
     diferencias = []
     ref_words = texto_ref.split()
     audio_words = texto_audio.split()
@@ -202,73 +181,122 @@ def analizar_diferencias(texto_ref: str, texto_audio: str):
 
     correctas = 0
     incorrectas = 0
+    errores_recurrentes = {}
 
     for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
         if opcode == "equal":
             correctas += (i2 - i1)
         else:
             incorrectas += max(i2 - i1, j2 - j1)
+            original = " ".join(ref_words[i1:i2])
+            dicho = " ".join(audio_words[j1:j2])
+            
+            # Registrar error para la tabla errors_recurrentes
+            error_key = (original, dicho)
+            errores_recurrentes[error_key] = errores_recurrentes.get(error_key, 0) + 1
+            
             diferencias.append({
                 "tipo": opcode,
-                "palabra_original": " ".join(ref_words[i1:i2]),
-                "palabra_dicha": " ".join(audio_words[j1:j2])
+                "palabra_original": original,
+                "palabra_dicha": dicho
             })
+
     total = correctas + incorrectas
     precision = round((correctas / total) * 100, 2) if total > 0 else 0
 
-    return diferencias, correctas, incorrectas, precision
+    return diferencias, correctas, incorrectas, precision, errores_recurrentes
 
-# Calcular fluidez
-def calcular_fluidez(transcripcion):
+# Función mejorada para calcular fluidez
+def calcular_fluidez(transcripcion: dict) -> dict:
     palabras = transcripcion['text'].split()
     n_palabras = len(palabras)
     duracion = transcripcion['segments'][-1]['end'] if transcripcion['segments'] else 1
     palabras_por_minuto = round(n_palabras / (duracion / 60), 2)
 
+    pausas = 0
     for i in range(1, len(transcripcion['segments'])):
-        transcripcion['segments'][i]['prev_end'] = transcripcion['segments'][i-1]['end']
-
-    pausas = [seg for seg in transcripcion['segments'] if seg['start'] - seg.get('prev_end', 0) > 1.5]
+        if transcripcion['segments'][i]['start'] - transcripcion['segments'][i-1]['end'] > 1.5:
+            pausas += 1
     
     return {
         "palabras_por_minuto": palabras_por_minuto,
-        "numero_pausas": len(pausas),
+        "numero_pausas": pausas,
         "duracion_total_segundos": round(duracion, 2)
     }
 
-# Realizar análisis completo
+# Función para guardar errores recurrentes
+def guardar_errores_recurrentes(paciente_id: str, fecha: str, errores: dict):
+    records = []
+    for (original, dicho), frecuencia in errores.items():
+        records.append({
+            "paciente_id": paciente_id,
+            "fecha": fecha,
+            "tipo_error": "pronunciacion",
+            "palabra_original": original,
+            "palabra_dicha": dicho,
+            "frecuencia": frecuencia,
+            "contacto": False  # Por defecto
+        })
+    
+    if records:
+        app.state.supabase.table("errors_recurrentes").insert(records).execute()
+
+# Función para guardar métricas de fluidez
+def guardar_fluidez(paciente_id: str, fecha: str, fluidez: dict):
+    app.state.supabase.table("fluidex_lectora").insert([{
+        "paciente_id": paciente_id,
+        "fecha": fecha,
+        "palabras_por_minuto": fluidez["palabras_por_minuto"],
+        "numero_passes": fluidez["numero_pausas"],
+        "duracion_total_segundos": fluidez["duracion_total_segundos"]
+    }]).execute()
+
+# Función para guardar precisión de pronunciación
+def guardar_precision(paciente_id: str, fecha: str, correctas: int, incorrectas: int, precision: float):
+    app.state.supabase.table("precision_pronunciacion").insert([{
+        "paciente_id": paciente_id,
+        "fecha": fecha,
+        "palabras_correctas": correctas,
+        "palabras_incorrectas": incorrectas,
+        "porcentaje_predision": precision,
+        "observaciones": "Análisis automático"
+    }]).execute()
+
+# Función principal de análisis
 async def realizar_analisis_completo(paciente_id: str, archivo_pdf: str, archivo_audio: str):
     try:
+        # Descargar archivos
         if not descargar_archivo(BUCKET_PDF, archivo_pdf, PDF_TEMP):
-            raise HTTPException(status_code=500, detail="No se pudo descargar el PDF")
-
+            raise Exception("No se pudo descargar el PDF")
+        
         if not descargar_archivo(BUCKET_AUDIO, archivo_audio, AUDIO_TEMP):
-            raise HTTPException(status_code=500, detail="No se pudo descargar el audio")
+            raise Exception("No se pudo descargar el audio")
 
+        # Procesar archivos
         texto_ref = normalizar_texto(extraer_texto_pdf(PDF_TEMP))
         transcripcion = transcribir_audio(AUDIO_TEMP)
-
+        
         if not transcripcion:
-            raise HTTPException(status_code=500, detail="Error al transcribir el audio")
+            raise Exception("Error al transcribir el audio")
 
         texto_audio = normalizar_texto(transcripcion['text'])
-        diferencias, correctas, incorrectas, precision = analizar_diferencias(texto_ref, texto_audio)
+        fecha_actual = datetime.datetime.now().isoformat()
+        
+        # Analizar resultados
+        diferencias, correctas, incorrectas, precision, errores = analizar_diferencias(texto_ref, texto_audio)
         fluidez = calcular_fluidez(transcripcion)
 
-        # Guardar resultados en Supabase
-        app.state.supabase.table("resultados").insert([{
-            "paciente_id": paciente_id,
-            "precision": precision,
-            "fluidez": fluidez,
-            "diferencias": json.dumps(diferencias),
-            "fecha_analisis": datetime.datetime.now().isoformat()
-        }]).execute()
+        # Guardar en las tablas específicas
+        guardar_errores_recurrentes(paciente_id, fecha_actual, errores)
+        guardar_fluidez(paciente_id, fecha_actual, fluidez)
+        guardar_precision(paciente_id, fecha_actual, correctas, incorrectas, precision)
 
-        # Finalizar el análisis
-        app.state.analisis_en_curso = False
-
+        # Limpiar
+        os.remove(PDF_TEMP)
+        os.remove(AUDIO_TEMP)
+        
     except Exception as e:
-        app.state.analisis_en_curso = False
         print(f"Error en análisis completo: {str(e)}")
         raise
-
+    finally:
+        app.state.analisis_en_curso = False

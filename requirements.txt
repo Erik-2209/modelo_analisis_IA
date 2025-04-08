@@ -6,4 +6,7 @@ python-dotenv==1.0.0
 python-multipart==0.0.6
 uvicorn==0.22.0
 librosa==0.10.0
-httpx==0.24.1  
+httpx==0.24.1
+gotrue==0.4.1
+postgrest-py==0.10.7
+realtime-py==0.1.5
